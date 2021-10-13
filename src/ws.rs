@@ -7,6 +7,7 @@ use dtn7_plus::sms::SMSBundle;
 use linefeed::terminal::DefaultTerminal;
 use linefeed::Interface;
 use std::convert::{TryFrom, TryInto};
+use std::error::Error;
 use std::io;
 use std::io::{stdout, Read, Write};
 use std::sync::Arc;
@@ -23,9 +24,17 @@ pub struct ChatConnection {
     pub iface: Arc<Interface<DefaultTerminal>>,
     pub recv: Receiver<WsCommand>,
 }
+
+pub struct Outgoing {
+    pub src: EndpointID,
+    pub dst: EndpointID,
+    pub delivery_notification: bool,
+    pub lifetime: Duration,
+    pub data: Vec<u8>,
+}
 pub enum WsCommand {
     Text(String),
-    SendData(WsSendData),
+    SendData(Outgoing),
 }
 pub fn send_listener(
     recv: Receiver<WsCommand>,
@@ -39,7 +48,29 @@ pub fn send_listener(
                 out.send(cmd).expect("error sending command");
             }
             WsCommand::SendData(data) => {
-                let out_bytes = serde_cbor::to_vec(&data).unwrap();
+                let flags = if data.delivery_notification && !data.dst.to_string().contains("sms2")
+                {
+                    //println!("Delivery notification requested");
+                    bp7::flags::BundleControlFlags::BUNDLE_STATUS_REQUEST_DELIVERY.bits()
+                } else {
+                    0
+                };
+                let mut bndl = bp7::bundle::BundleBuilder::new()
+                    .primary(
+                        bp7::primary::PrimaryBlockBuilder::new()
+                            .source(data.src)
+                            .destination(data.dst)
+                            .lifetime(data.lifetime)
+                            .bundle_control_flags(flags)
+                            .creation_timestamp(bp7::CreationTimestamp::now())
+                            .build()
+                            .unwrap(),
+                    )
+                    .payload(data.data)
+                    .build()
+                    .unwrap();
+                //println!("{:?}", bndl);
+                let out_bytes = bndl.to_cbor();
                 if verbose {
                     writeln!(
                         iface,
@@ -47,43 +78,15 @@ pub fn send_listener(
                         Fg(Yellow),
                         out_bytes.len(),
                         style::Reset
-                    );
+                    )
+                    .unwrap();
                 }
                 out.send(out_bytes).expect("error sending echo response");
             }
         }
     }
 }
-/*
-pub fn new_chat_connection<T>(
-    rx: Receiver<WsCommand>,
-    iface: Arc<Interface<DefaultTerminal>>,
-    verbose: bool,
-    endpoint: EndpointID,
-) -> ws::WebSocket<T>
-where
-    T: FnMut(Receiver<WsCommand>, Arc<Interface<DefaultTerminal>>, verbose, EndpointID),
-{
-    Builder::new()
-        .build(move |out: Sender| {
-            let out2 = out.clone();
-            let rx2 = rx.clone();
-            let iface2 = iface.clone();
-            thread::spawn(move || {
-                send_listener(rx2.clone(), out2.clone(), iface2.clone(), verbose)
-            });
 
-            ChatConnection {
-                localnode: endpoint.clone(),
-                out,
-                subscribed: false,
-                verbose,
-                iface: iface.clone(),
-                recv: rx.clone(),
-            }
-        })
-        .unwrap()
-}*/
 impl ChatConnection {
     fn on_bundle(&self, bndl: Bundle) -> Result<()> {
         if bndl.is_administrative_record() {
@@ -157,7 +160,7 @@ impl Handler for ChatConnection {
             style::Reset
         )?;
         self.out.send(format!("/subscribe {}", self.localnode))?;
-        self.out.send(format!("/data"))?;
+        self.out.send("/bundle".to_string())?;
         Ok(())
     }
 

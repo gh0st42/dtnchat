@@ -54,7 +54,7 @@ fn print_logo() {
     println!("This is a simple dtn chat and messaging program.");
     println!("Enter \"/help\" for a list of commands.");
     println!("Press Ctrl-D or enter \"/quit\" to exit.");
-    println!("");
+    println!();
 }
 fn pe(c: String) -> String {
     format!("\x01{}\x02", c)
@@ -72,7 +72,7 @@ fn send_sms(
             .message(msg.trim())
             .build()?,
     )?;
-    let data = WsSendData {
+    let data = Outgoing {
         src,
         dst,
         delivery_notification: true,
@@ -138,6 +138,7 @@ fn main() -> Result<()> {
     let (tx, rx) = unbounded::<WsCommand>();
     //let thread_rx = rx.clone();
     //let mut ws = new_chat_connection(rx.clone(), iface.clone(), verbose, endpoint.clone());
+
     let mut ws = Builder::new()
         .build(move |out: ws::Sender| {
             let out2 = out.clone();
@@ -185,7 +186,7 @@ fn main() -> Result<()> {
         }
     }
 
-    println!("");
+    println!();
     let _handler = thread::spawn(|| {
         ws.run().unwrap();
     });
@@ -223,7 +224,7 @@ fn main() -> Result<()> {
                 let dst: EndpointID = if let Ok(dst_num) = args.parse::<u64>() {
                     format!("ipn://{}.767", dst_num).try_into()?
                 } else {
-                    format!("dtn://{}/sms", args).try_into()?
+                    format!("dtn://{}/~sms", args).try_into()?
                 };
                 client.register_application_endpoint(&dst.to_string())?;
                 if peers.insert(dst.node().unwrap()) {
@@ -238,10 +239,11 @@ fn main() -> Result<()> {
             "/leave" => {
                 if args != localnode.node().unwrap() {
                     let dst: EndpointID = if let Ok(dst_num) = args.parse::<u64>() {
-                        format!("ipn://{}.767", dst_num).try_into()?
+                        format!("ipn://{}.767", dst_num)
                     } else {
-                        format!("dtn://{}/sms", args).try_into()?
-                    };
+                        format!("dtn://{}/~sms", args)
+                    }
+                    .try_into()?;
                     client.unregister_application_endpoint(&dst.to_string())?;
                     if peers.remove(&dst.node().unwrap()) {
                         let completer = Arc::new(DtnChatCompleter {
@@ -258,10 +260,10 @@ fn main() -> Result<()> {
                 for i in &groups {
                     println!("  {}", i);
                 }
-                println!("");
+                println!();
             }
             "/query" => {
-                if args == "" {
+                if args.is_empty() {
                     query = None;
                     interface.set_prompt(&format!(
                         "{}{} {}> {}",
@@ -271,12 +273,15 @@ fn main() -> Result<()> {
                         pe(termion::style::Reset.to_string())
                     ))?;
                 } else {
-                    let (dst_node, msg) = split_first_word(&args);
+                    let (dst_node, _msg) = split_first_word(args);
                     let dst: EndpointID = if let Ok(dst_num) = dst_node.parse::<u64>() {
-                        format!("ipn://{}.767", dst_num).try_into()?
+                        format!("ipn://{}.767", dst_num)
+                    } else if groups.contains(dst_node) {
+                        format!("dtn://{}/~sms", dst_node)
                     } else {
-                        format!("dtn://{}/sms", dst_node).try_into()?
-                    };
+                        format!("dtn://{}/sms", dst_node)
+                    }
+                    .try_into()?;
                     if !peers.contains(&dst.node().unwrap()) {
                         peers.insert(dst.node().unwrap());
                         let completer = Arc::new(DtnChatCompleter {
@@ -299,9 +304,11 @@ fn main() -> Result<()> {
             }
             "/msg" => {
                 //println!("msg: {}", args);
-                let (dst_node, msg) = split_first_word(&args);
+                let (dst_node, msg) = split_first_word(args);
                 let dst: EndpointID = if let Ok(dst_num) = dst_node.parse::<u64>() {
                     format!("ipn://{}.767", dst_num).try_into()?
+                } else if groups.contains(dst_node) {
+                    format!("dtn://{}/~sms", dst_node).try_into()?
                 } else {
                     format!("dtn://{}/sms", dst_node).try_into()?
                 };
@@ -336,11 +343,11 @@ fn main() -> Result<()> {
             }
             "/quit" => break,
             _ => {
-                if line.starts_with("/") {
+                if line.starts_with('/') {
                     println!("Unknown command: {:?}", line);
                 } else if query.is_none() {
                     println!("Please open query first");
-                } else {
+                } else if !line.is_empty() {
                     send_sms(
                         tx.clone(),
                         endpoint.clone(),
@@ -369,7 +376,10 @@ fn split_first_word(s: &str) -> (&str, &str) {
 
 static DTNCHAT_COMMANDS: &[(&str, &str)] = &[
     ("/query", "Open query to specific endpoint"),
-    ("/msg", "Compose a new short message"),
+    (
+        "/msg",
+        "Compose a new short message (groups must be joined first!)",
+    ),
     ("/list", "List subscriptions"),
     ("/lifetime", "Manage message lifetime"),
     ("/peers", "List known peers"),

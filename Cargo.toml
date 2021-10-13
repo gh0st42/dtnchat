@@ -1,0 +1,22 @@
+[package]
+name = "dtnchat"
+version = "0.1.0"
+authors = ["Lars Baumgaertner <1264131+gh0st42@users.noreply.github.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+termion = "1.5.5"
+linefeed = "0.6.0"
+#dtn7-plus = { path = "../../dtn7/dtn7-plus-rs", features = ["client", "sms"] }
+dtn7-plus = { version = "0.1.0", features = ["client", "sms"] }
+anyhow = "1.0.27"
+ws = "0.9.1"
+bp7 = "0.6.6"
+url = "2.1.1"
+chrono = "0.4.19"
+crossbeam-channel = "0.4.4"
+serde_cbor = "0.11.1"
+clap = "2.33.0"
+humantime = "2.0.0"

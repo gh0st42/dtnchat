@@ -10,7 +10,7 @@ edition = "2018"
 termion = "1.5.6"
 linefeed = "0.6.0"
 #dtn7-plus = { path = "../../dtn7/dtn7-plus-rs", features = ["client", "sms"] }
-dtn7-plus = { version = "0.5.2", features = ["client", "sms"] }
+dtn7-plus = { version = "0.5.3", features = ["client", "sms"] }
 anyhow = "1.0.44"
 ws = "0.9.1"
 bp7 = "0.9.2"
@@ -20,3 +20,6 @@ crossbeam-channel = "0.5.1"
 serde_cbor = "0.11.2"
 clap = "2.33.3"
 humantime = "2.1.0"
+
+[dev-dependencies]
+eliza = "2.0.0"
